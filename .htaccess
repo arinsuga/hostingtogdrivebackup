@@ -1,0 +1,26 @@
+<IfModule mod_env.c>
+    # MySQL Database Configuration
+    SetEnv DB_HOST "localhost"
+    SetEnv DB_USER "backupusr"
+    SetEnv DB_PASSWORD "Init123.*#"
+
+    # Google Drive Configuration
+    SetEnv GOOGLE_DRIVE_FOLDER_ID "/DOKUMENT/BUSINESS/ZTESBACKUP"
+
+    # Backup Paths
+    SetEnv BACKUP_TEMP_DIR "/home/ariq2418/tmp/backup"
+    SetEnv APP_ROOT "/home/ariq2418/public_html"
+
+    # Email Notification
+    SetEnv ADMIN_EMAIL "arinsuga@gmail.com"
+
+    # Logging
+    SetEnv LOG_DIR "./logs"
+    SetEnv LOG_FILE "backup.log"
+
+    # Backup Retention
+    SetEnv RETENTION_DAYS "30"
+
+    # Compression Level
+    SetEnv COMPRESSION_LEVEL "6"
+</IfModule>

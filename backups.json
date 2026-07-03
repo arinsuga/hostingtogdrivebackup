@@ -1,0 +1,10 @@
+{
+  "databases": [
+    "ariq2418_autorefreshauthapidb",
+    "ariq2418_autorefreshappapidb"
+  ],
+  "app_folders": [
+    "autorefreshauthapi",
+    "autorefreshappapi"
+  ]
+}
