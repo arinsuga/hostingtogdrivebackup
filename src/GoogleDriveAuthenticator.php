@@ -25,10 +25,15 @@ class GoogleDriveAuthenticator
         $this->tokenFile = $tokenFile;
         $this->logger = $logger ?? new Logger();
 
+        $this->logger->error("Initializing GoogleDriveAuthenticator with credentials: {$this->credentialsFile} and token: {$this->tokenFile}");
+
         if (!file_exists($this->credentialsFile)) {
-            throw new Exception("Credentials file not found: {$this->credentialsFile}");
+            $errorMessage = "Credentials file not found: {$this->credentialsFile}";
+            $this->logger->error("ERROR: {$errorMessage}");
+            throw new Exception($errorMessage);
         }
 
+        $this->logger->error("Loading Google Client with credentials from: {$this->credentialsFile}");
         $this->client = new Google_Client();
         $this->client->setAuthConfig($this->credentialsFile);
         $this->client->setScopes(array('https://www.googleapis.com/auth/drive'));

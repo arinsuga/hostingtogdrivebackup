@@ -90,30 +90,55 @@ function getEnvValue($key, $default = null)
     return $default;
 }
 
+function resolvePath($value, $default, $baseDir = null)
+{
+    if ($value === null || $value === '') {
+        return $default;
+    }
+
+    if (substr($value, 0, 1) === '/' || preg_match('/^[A-Za-z]:[\\/]/', $value)) {
+        return $value;
+    }
+
+    $base = $baseDir !== null ? rtrim($baseDir, '/\\') : __DIR__;
+    return $base . DIRECTORY_SEPARATOR . ltrim($value, '/\\');
+}
+
 $logger = new Logger(
-    getenv('LOG_DIR') ?: './logs',
-    getenv('LOG_FILE') ?: 'backup.log'
+    resolvePath(getEnvValue('LOG_DIR', './logs'), __DIR__ . DIRECTORY_SEPARATOR . 'logs', __DIR__),
+    getEnvValue('LOG_FILE', 'backup.log')
 );
 
+$logger->error("DEBUG: ===== Start Backup =====");
 $adminEmail = getenv('ADMIN_EMAIL') ?: '';
 $emailNotifier = new EmailNotifier($adminEmail, $logger);
 
 try {
 
     $googleDriveFolderId = getEnvValue('GOOGLE_DRIVE_FOLDER_ID');
-    $backupTempDir = getEnvValue('BACKUP_TEMP_DIR', sys_get_temp_dir());
-    $appRoot = getEnvValue('APP_ROOT', __DIR__ . '/public_html');
+    $backupTempDir = resolvePath(getEnvValue('BACKUP_TEMP_DIR', 'temp'), __DIR__ . DIRECTORY_SEPARATOR . 'temp', __DIR__);
+    $appRoot = resolvePath(getEnvValue('APP_ROOT', __DIR__ . '/public_html'), __DIR__ . DIRECTORY_SEPARATOR . 'public_html', __DIR__);
     $compressionLevel = intval(getEnvValue('COMPRESSION_LEVEL', 6));
     $retentionDays = intval(getEnvValue('RETENTION_DAYS', 30));
 
+    $logger->error("DEBUG: GOOGLE_DRIVE_FOLDER_ID={$googleDriveFolderId}");
+    $logger->error("DEBUG: BACKUP_TEMP_DIR={$backupTempDir}");
+    $logger->error("DEBUG: APP_ROOT={$appRoot}");
+    $logger->error("DEBUG: COMPRESSION_LEVEL={$compressionLevel}");
+    $logger->error("DEBUG: RETENTION_DAYS={$retentionDays}");
+
 
     if (!$googleDriveFolderId) {
-        throw new Exception('Missing required environment variable: GOOGLE_DRIVE_FOLDER_ID');
+        $errorMessage = "Missing required environment variable: GOOGLE_DRIVE_FOLDER_ID";
+        $logger->error("ERROR: {$errorMessage}");
+        throw new Exception($errorMessage);
     }
 
     $auth = new GoogleDriveAuthenticator(__DIR__ . '/credentials.json', __DIR__ . '/token.json', $logger);
     $auth->authenticate();
     $driveService = $auth->getDriveService();
+    $this->logger->error("DEBUG: Google Drive authentication successful, Drive service initialized.");
+    $this->logger->error("DEBUG: Google Drive service object: " . print_r($driveService, true));
 
     $uploader = new GoogleDriveUploader($driveService, $googleDriveFolderId, $logger);
     // Database dumps are produced by external script (backup.sh). DatabaseBackup will only compress existing SQL files.

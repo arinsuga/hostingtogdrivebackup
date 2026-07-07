@@ -42,7 +42,7 @@ class GoogleDriveUploader
             }
 
             // Get or create dated folder
-            $dateFolderName = date('Ymd');
+            $dateFolderName = date('YmdHis');
             $dateFolderId = $this->getOrCreateFolder($dateFolderName, $this->parentFolderId);
 
             if (!$dateFolderId) {

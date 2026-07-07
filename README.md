@@ -14,19 +14,44 @@ Backup tools for application folders and MySQL databases on shared hosting, with
 ## Installation
 
 1. Copy the project to your hosting directory.
-2. Install dependencies:
+   **Optional :** run comppress command
+   For Windows:
+   ```bash
+   7z a backuptools.zip src logs temp vendor .env backup.sh backup.php backups.json composer.json composer.lock credentials.json token.json tes.sh
+   ```
+
+   For Linux
+   ```bash
+   tar -czvf backuptools.tar.gz src logs temp vendor .env backup.sh backup.php backups.json composer.json composer.lock credentials.json token.json
+   ```
+
+2. Make sure to create or copy `.env` if already exist or use example from `.env.example` and fill in values.
+3. Run this command in root project directory to make sure no bugs when reading files:
+   ```bash
+   sed -i 's/\r$//' .env;
+   sed -i 's/\r$//' backups.json;
+   sed -i 's/\r$//' backup.sh;
+   sed -i 's/\r$//' tes.sh;
+   chmod 744 backup.sh;
+   chmod 744 tes.sh;
+   ```
+4. Install dependencies:
    ```bash
    composer install
    ```
-3. Create `.env` from `.env.example` and fill in values.
-4. Ensure `credentials.json` is present in the project root.
-5. On your local PC, run:
+5. Ensure `credentials.json` is present in the project root.
+6. On your local PC, run:
    ```bash
    php src/auth-setup.php
    ```
-6. Upload the generated `token.json` to hosting.
+7. Upload the generated `token.json` to hosting.
 
 ## Usage
+
+### Authenticate to get token.json from google drive API
+```bash
+php src/auth-setup.php
+```
 
 ### Manual backup
 
