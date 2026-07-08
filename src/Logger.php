@@ -39,6 +39,37 @@ class Logger
         return $this->write($logEntry);
     }
 
+    public function errorTerminal($message = '')
+    {
+        $timestamp = date('Y-m-d H:i:s');
+        $logEntry = "[{$timestamp}] ERROR: {$message}\n";
+
+        echo $logEntry;
+    }
+
+    /**
+     * Log an error message
+     * Format: [YYYY-MM-DD HH:MM:SS] ERROR: {message}
+     * 
+     * @param string $message Error message to log
+     * @return bool True if successful, false otherwise
+     */
+    public function debug($message = '')
+    {
+        $timestamp = date('Y-m-d H:i:s');
+        $logEntry = "[{$timestamp}] DEBUG: {$message}\n";
+
+        return $this->write($logEntry);
+    }
+
+    public function debugTerminal($message = '')
+    {
+        $timestamp = date('Y-m-d H:i:s');
+        $logEntry = "[{$timestamp}] DEBUG: {$message}\n";
+
+        echo $logEntry;
+    }
+
     /**
      * Write to log file
      * 
