@@ -3,7 +3,7 @@
  * backup.php - Main backup orchestration script
  *
  * PHP 7.2.23+ compatible
- * Usage: php backup.php
+ * Usage: php backup.php <zip-file> [<zip-file> ...]
  */
 
 require_once __DIR__ . '/vendor/autoload.php';
@@ -125,6 +125,8 @@ try {
     $logger->debugTerminal("backup.php - COMPRESSION_LEVEL={$compressionLevel}");
     $logger->debugTerminal("backup.php - RETENTION_DAYS={$retentionDays}");
 
+    
+
 
     if (!$googleDriveFolderId) {
         $errorMessage = "Missing required environment variable: GOOGLE_DRIVE_FOLDER_ID";
@@ -150,78 +152,30 @@ try {
     $retention = new RetentionPolicy($driveService, $googleDriveFolderId, $retentionDays, $logger);
     $logger->debugTerminal("backup.php - Retention policy initialized successfully.");
 
-    // Load database and application backup lists from JSON
-    $backupsConfigFile = __DIR__ . '/backups.json';
-    if (!file_exists($backupsConfigFile)) {
-        $message = "Missing required backups config file: {$backupsConfigFile}";
-        $logger->error($message);
-        $logger->errorTerminal($message);
-        throw new Exception($message);
+    $uploadedFiles = array_slice($argv, 1);
+    if (empty($uploadedFiles)) {
+        $logger->errorTerminal("No backup ZIP files were provided to backup.php.");
+        throw new Exception('No backup ZIP files were provided to backup.php.');
     }
 
-    $json = @file_get_contents($backupsConfigFile);
-    $cfg = $json ? json_decode($json, true) : null;
-    if (!is_array($cfg)) {
-        $message = "Invalid JSON in backups config file: {$backupsConfigFile}";
-        $logger->error($message);
-        $logger->errorTerminal($message);
-        throw new Exception($message);
-    }
+    $logger->debugTerminal('backup.php - Files passed for upload: ' . implode(', ', $uploadedFiles));
 
-    if (!isset($cfg['databases']) || !is_array($cfg['databases'])) {
-        $message = "Missing or invalid 'databases' section in backups config file: {$backupsConfigFile}";
-        $logger->error($message);
-        $logger->errorTerminal($message);
-        throw new Exception($message);
-    }
-
-    if (!isset($cfg['app_folders']) || !is_array($cfg['app_folders'])) {
-        $message = "Missing or invalid 'app_folders' section in backups config file: {$backupsConfigFile}";
-        $logger->error($message);
-        $logger->errorTerminal($message);
-        throw new Exception($message);
-    }
-
-    $databases = $cfg['databases'];
-    $appFolders = $cfg['app_folders'];
-
-    // Perform databasebackups
-    $logger->debugTerminal("backup.php - Starting database backups for: " . implode(', ', $databases));
-    foreach ($databases as $database) {
-        $logger->debugTerminal("backup.php - Uploading ZIP for database: {$database}");
-        // Find latest zip for this database in backup temp dir
-        $pattern = rtrim($backupTempDir, '/\\') . DIRECTORY_SEPARATOR . $database . '_*.zip';
-        $matches = glob($pattern);
-        if (empty($matches)) {
-            $logger->error("No ZIP found for database {$database} in {$backupTempDir}");
+    foreach ($uploadedFiles as $filePath) {
+        if (!is_string($filePath) || trim($filePath) === '') {
             continue;
         }
-        usort($matches, function ($a, $b) { return filemtime($b) - filemtime($a); });
-        $zipPath = $matches[0];
-        $logger->debugTerminal("backup.php - Found ZIP to upload: {$zipPath}");
-        $uploader->uploadBackup($zipPath, basename($zipPath));
-        @unlink($zipPath);
-    }
-    $logger->debugTerminal("backup.php - Database backups completed successfully.");
 
-    //perform application backups
-    $logger->debugTerminal("backup.php - Starting application backups for: " . implode(', ', $appFolders));
-    foreach ($appFolders as $folderName) {
-        $logger->debugTerminal("backup.php - Uploading ZIP for application folder: {$folderName}");
-        // Find latest zip for this app folder in backup temp dir
-        $pattern = rtrim($backupTempDir, '/\\') . DIRECTORY_SEPARATOR . $folderName . '_*.zip';
-        $matches = glob($pattern);
-        if (empty($matches)) {
-            $logger->error("No ZIP found for app folder {$folderName} in {$backupTempDir}");
+        if (!file_exists($filePath)) {
+            $logger->error("Provided backup file does not exist: {$filePath}");
             continue;
         }
-        usort($matches, function ($a, $b) { return filemtime($b) - filemtime($a); });
-        $zipPath = $matches[0];
-        $logger->debugTerminal("backup.php - Found app ZIP to upload: {$zipPath}");
-        $uploader->uploadBackup($zipPath, basename($zipPath));
-        @unlink($zipPath);
+
+        $logger->debugTerminal("backup.php - Uploading provided ZIP: {$filePath}");
+        $uploader->uploadBackup($filePath, basename($filePath));
+        @unlink($filePath);
     }
-    $logger->debugTerminal("backup.php - Application backups completed successfully.");
+
+    $logger->debugTerminal("backup.php - All provided backup ZIP files processed successfully.");
 
     // Retention policy cleanup
     $retention->deleteOldBackups();

@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # backup.sh - produce SQL dumps using mysqldump and then run backup.php
 # Place this script in the project root and make executable (chmod +x backup.sh)
 
@@ -52,6 +52,28 @@ echo "Application root directory: $APP_ROOT"
 echo "===== end Initial Backup Variables ====="
 echo ""
 
+# Build JSON string from exported environment variables using PHP (avoids dependency on jq)
+envFile=$(php -r '
+echo json_encode([
+  "DB_HOST" => getenv("DB_HOST") !== false ? getenv("DB_HOST") : null,
+  "DB_USER" => getenv("DB_USER") !== false ? getenv("DB_USER") : null,
+  "DB_PASSWORD" => getenv("DB_PASSWORD") !== false ? getenv("DB_PASSWORD") : null,
+  "GOOGLE_DRIVE_FOLDER_ID" => getenv("GOOGLE_DRIVE_FOLDER_ID") !== false ? getenv("GOOGLE_DRIVE_FOLDER_ID") : null,
+  "BACKUP_TEMP_DIR" => getenv("BACKUP_TEMP_DIR") !== false ? getenv("BACKUP_TEMP_DIR") : null,
+  "APP_ROOT" => getenv("APP_ROOT") !== false ? getenv("APP_ROOT") : null,
+  "ADMIN_EMAIL" => getenv("ADMIN_EMAIL") !== false ? getenv("ADMIN_EMAIL") : null,
+  "LOG_DIR" => getenv("LOG_DIR") !== false ? getenv("LOG_DIR") : null,
+  "LOG_FILE" => getenv("LOG_FILE") !== false ? getenv("LOG_FILE") : null,
+  "RETENTION_DAYS" => getenv("RETENTION_DAYS") !== false ? getenv("RETENTION_DAYS") : null,
+  "COMPRESSION_LEVEL" => getenv("COMPRESSION_LEVEL") !== false ? getenv("COMPRESSION_LEVEL") : null,
+], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+')
+
+echo "===== start Environment Variables JSON ====="
+echo "$envFile"
+echo "===== end Environment Variables JSON ====="
+
+
 case "$BACKUP_TEMP_DIR" in
   /*) ;;
   *) BACKUP_TEMP_DIR="$DIR/$BACKUP_TEMP_DIR" ;;
@@ -68,9 +90,8 @@ if [ ! -f "$BACKUPS_JSON" ]; then
 fi
 
 # Use PHP to extract database list and app folder list (one-line space separated)
-dbArrays=()
+uploadFiles=()
 databases=$(php -r 'echo implode(" ", array_map("strval", json_decode(file_get_contents($argv[1]), true)["databases"] ?? array()));' "$BACKUPS_JSON")
-appArrays=()
 app_folders=$(php -r 'echo implode(" ", array_map("strval", json_decode(file_get_contents($argv[1]), true)["app_folders"] ?? array()));' "$BACKUPS_JSON")
 
 echo "Databases to backup: $databases"
@@ -91,12 +112,12 @@ else
       echo "mysqldump failed for $db (exit $rc). Check $outfile for details."
     else
       echo "mysqldump completed for $db"
-      zipfile="$BACKUP_TEMP_DIR/${db}_$ts.zip"
-      dbArrays+=("$zipfile")
       if command -v zip >/dev/null 2>&1; then
+        zipfile="$BACKUP_TEMP_DIR/${db}_$ts.zip"
         (cd "$BACKUP_TEMP_DIR" && zip -q "$zipfile" "$(basename "$outfile")")
         if [ -f "$zipfile" ]; then
           echo "Created zip backup: $zipfile"
+          uploadFiles+=("$zipfile")
           rm "$outfile"
         else
           echo "Failed to create zip backup: $zipfile"
@@ -117,7 +138,7 @@ if [ -n "$app_folders" ]; then
       (cd "$DIR" && zip -q -r "$zipfile" "$APP_ROOT/${folder}")
       if [ -f "$zipfile" ]; then
         echo "Created app zip backup: $zipfile"
-        appArrays+=("$zipfile")
+        uploadFiles+=("$zipfile")
       else
         echo "Failed to create app zip backup: $zipfile"
       fi
@@ -127,5 +148,5 @@ if [ -n "$app_folders" ]; then
   done
 fi
 
-# Now run PHP backup orchestration (will compress uploaded SQL files and upload to Drive)
-#php "$DIR/backup.php"
+# Now run PHP backup orchestration and pass the generated ZIP files for upload
+#php "$DIR/backup.php" "${uploadFiles[@]}"
