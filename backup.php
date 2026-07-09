@@ -158,7 +158,6 @@ $logger = new Logger(
     getEnvValue('LOG_FILE', 'backup.log')
 );
 
-$logger->debugTerminal("===== Start backup.php =====");
 $adminEmail = getenv('ADMIN_EMAIL') ?: '';
 $emailNotifier = new EmailNotifier($adminEmail, $logger);
 
@@ -187,12 +186,6 @@ try {
     $compressionLevel = intval(isset($payloadEnv->COMPRESSION_LEVEL) ? $payloadEnv->COMPRESSION_LEVEL : getEnvValue('COMPRESSION_LEVEL', 6));
     $retentionDays = intval(isset($payloadEnv->RETENTION_DAYS) ? $payloadEnv->RETENTION_DAYS : getEnvValue('RETENTION_DAYS', 30));
 
-    $logger->debugTerminal("backup.php - GOOGLE_DRIVE_FOLDER_ID={$googleDriveFolderId}");
-    $logger->debugTerminal("backup.php - BACKUP_TEMP_DIR={$backupTempDir}");
-    $logger->debugTerminal("backup.php - APP_ROOT={$appRoot}");
-    $logger->debugTerminal("backup.php - COMPRESSION_LEVEL={$compressionLevel}");
-    $logger->debugTerminal("backup.php - RETENTION_DAYS={$retentionDays}");
-
     if (!$googleDriveFolderId) {
         $errorMessage = "Missing required environment variable: GOOGLE_DRIVE_FOLDER_ID";
         $logger->errorTerminal("{$errorMessage}");
@@ -201,54 +194,41 @@ try {
 
     $auth = new GoogleDriveAuthenticator(__DIR__ . '/credentials.json', __DIR__ . '/token.json', $logger);
     $authResult = $auth->authenticate();
-    $logger->debugTerminal("backup.php - Google Drive authentication successful, Drive service initialized.");
-
-
     $driveService = $auth->getDriveService();
-    $logger->debugTerminal("backup.php - Google Drive service initialized successfully.");
 
     $uploader = new GoogleDriveUploader($driveService, $googleDriveFolderId, $logger);
-    $logger->debugTerminal("backup.php - Google Drive uploader initialized successfully.");
-
     $retention = new RetentionPolicy($driveService, $googleDriveFolderId, $retentionDays, $logger);
-    $logger->debugTerminal("backup.php - Retention policy initialized successfully.");
 
     $uploadFiles = extractUploadFiles($payload);
     if (empty($uploadFiles)) {
-        $logger->errorTerminal("No upload_files were provided in the JSON payload.");
-        throw new Exception('No upload_files were provided in the JSON payload.');
+        $errorMessage = "No upload_files were provided in the JSON payload.";
+        $logger->error($errorMessage);
+        $logger->errorTerminal($errorMessage);
+        throw new Exception($errorMessage);
     }
 
-    $logger->debugTerminal('backup.php - Files passed for upload: ' . implode(', ', $uploadFiles));
-    $logger->debugTerminal("");
-
-    // $logger->debugTerminal("===== exit for testing only =====");
-    // throw new Exception("backup.php - Starting backup orchestration...");
-
-
-    $logger->debugTerminal("backup.php - Starting backup orchestration...");
     foreach ($uploadFiles as $filePath) {
         if (!file_exists($filePath)) {
-            $logger->error("Provided backup file does not exist: {$filePath}");
+            $errorMessage = "Provided backup file does not exist: {$filePath}";
+            $logger->errorTerminal($errorMessage);
+            $logger->error($errorMessage);
             continue;
         }
 
-        $logger->debugTerminal("backup.php - Uploading provided ZIP: {$filePath}");
-        $uploader->uploadBackup($filePath, basename($filePath));
+        $uploader->uploadBackup($payload->timestamp, $filePath, basename($filePath));
         @unlink($filePath);
     }
-    $logger->debugTerminal("backup.php - All provided backup ZIP files processed successfully uploaded.");
 
     // Retention policy cleanup
     $retention->deleteOldBackups();
-     $logger->debugTerminal("backup.php - Retention policy cleanup completed successfully.");
 
     exit(0);
 } catch (Exception $e) {
-     $logger->debugTerminal("backup.php - Exception caught: " . $e->getMessage());
-    $logger->error($e->getMessage());
+    $errorMessage = "Critical error in backup.php: " . $e->getMessage();
+    $logger->errorTerminal($errorMessage);
+    $logger->error($errorMessage);
     if ($emailNotifier->isEnabled()) {
-        $emailNotifier->sendCriticalError('BackupFailure', $e->getMessage());
+        $emailNotifier->sendCriticalError('BackupFailure', $errorMessage);
     }
     exit(1);
 }

@@ -7,13 +7,8 @@ set -eu
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$DIR/.env"
 BACKUPS_JSON="$DIR/backups.json"
-
-echo "===== start Initial Base Variables ====="
-echo "Current working directory: $DIR"
-echo "Environment file: $ENV_FILE"
-echo "Backups JSON file: $BACKUPS_JSON"
-echo "===== end Initial Base Variables ====="
-echo ""
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+export TIMESTAMP
 
 # Load .env if present (simple key=value parser)
 if [ -f "$ENV_FILE" ]; then
@@ -46,12 +41,6 @@ fi
 BACKUP_TEMP_DIR="${BACKUP_TEMP_DIR:-./temp}"
 APP_ROOT="${APP_ROOT:-~/public_htmlXXX}"
 
-echo "===== start Initial Backup Variables ====="
-echo "Backup temporary directory: $BACKUP_TEMP_DIR"
-echo "Application root directory: $APP_ROOT"
-echo "===== end Initial Backup Variables ====="
-echo ""
-
 case "$BACKUP_TEMP_DIR" in
   /*) ;;
   *) BACKUP_TEMP_DIR="$DIR/$BACKUP_TEMP_DIR" ;;
@@ -63,7 +52,7 @@ DB_USER="${DB_USER:-}"
 DB_PASSWORD="${DB_PASSWORD:-}"
 
 if [ ! -f "$BACKUPS_JSON" ]; then
-  echo "Missing backups.json at $BACKUPS_JSON"
+  echo "ERROR: Missing backups.json at $BACKUPS_JSON"
   exit 1
 fi
 
@@ -72,36 +61,31 @@ uploadFiles=()
 databases=$(php -r 'echo implode(" ", array_map("strval", json_decode(file_get_contents($argv[1]), true)["databases"] ?? array()));' "$BACKUPS_JSON")
 app_folders=$(php -r 'echo implode(" ", array_map("strval", json_decode(file_get_contents($argv[1]), true)["app_folders"] ?? array()));' "$BACKUPS_JSON")
 
-echo "Databases to backup: $databases"
-echo "Application folders to backup: $app_folders"
-
 if [ -z "$databases" ]; then
-  echo "No databases listed in backups.json"
+  echo "ERROR: No databases listed in backups.json"
 else
   # Loop through each database and perform mysqldump
   for db in $databases; do
-    ts=$(date +%Y%m%d_%H%M%S)
+    ts=$TIMESTAMP
     outfile="$BACKUP_TEMP_DIR/${db}_$ts.sql"
-    echo "Running mysqldump for: $db -> $outfile"
     MYSQL_PWD="$DB_PASSWORD" /bin/mysqldump -h "$DB_HOST" -u "$DB_USER" "$db" > "$outfile" 2>&1
 
     rc=$?
     if [ "$rc" -ne 0 ]; then
-      echo "mysqldump failed for $db (exit $rc). Check $outfile for details."
+      echo "ERROR: mysqldump failed for $db (exit $rc). Check $outfile for details."
     else
-      echo "mysqldump completed for $db"
       if command -v zip >/dev/null 2>&1; then
         zipfile="$BACKUP_TEMP_DIR/${db}_$ts.zip"
         (cd "$BACKUP_TEMP_DIR" && zip -q "$zipfile" "$(basename "$outfile")")
         if [ -f "$zipfile" ]; then
-          echo "Created zip backup: $zipfile"
+          echo "ERROR: Created zip backup: $zipfile"
           uploadFiles+=("$zipfile")
           rm "$outfile"
         else
-          echo "Failed to create zip backup: $zipfile"
+          echo "ERROR: Failed to create zip backup: $zipfile"
         fi
       else
-        echo "zip command not available; skipped zip creation"
+        echo "ERROR: zip command not available; skipped zip creation"
       fi
     fi
   done
@@ -109,19 +93,18 @@ fi
 
 if [ -n "$app_folders" ]; then
   for folder in $app_folders; do
-    ts=$(date +%Y%m%d_%H%M%S)
+    ts=$TIMESTAMP
     zipfile="$BACKUP_TEMP_DIR/${folder}_$ts.zip"
-    echo "Creating app backup zip for: $folder -> $zipfile"
     if command -v zip >/dev/null 2>&1; then
       (cd "$DIR" && zip -q -r "$zipfile" ~/"${APP_ROOT}/${folder}")
       if [ -f "$zipfile" ]; then
-        echo "Created app zip backup: $zipfile"
+        echo "ERROR: Created app zip backup: $zipfile"
         uploadFiles+=("$zipfile")
       else
-        echo "Failed to create app zip backup: $zipfile"
+        echo "ERROR: Failed to create app zip backup: $zipfile"
       fi
     else
-      echo "zip command not available; skipped app zip creation"
+      echo "ERROR: zip command not available; skipped app zip creation"
     fi
   done
 fi
@@ -150,12 +133,9 @@ echo json_encode([
     "COMPRESSION_LEVEL" => getenv("COMPRESSION_LEVEL") !== false ? getenv("COMPRESSION_LEVEL") : null,
   ],
   "upload_files" => $uploadFiles,
+  "timestamp" => getenv("TIMESTAMP") !== false ? getenv("TIMESTAMP") : null,
 ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
 ')
-
-echo "===== start Environment Variables JSON ====="
-echo "$envFile"
-echo "===== end Environment Variables JSON ====="
 
 # Now run PHP backup orchestration and pass the generated JSON payload as one argument
 php "$DIR/backup.php" "$envFile"
