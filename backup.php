@@ -222,6 +222,9 @@ try {
     // Retention policy cleanup
     $retention->deleteOldBackups();
 
+    $logger->successTerminal("Backup process completed successfully.");
+    $logger->success("Backup process completed successfully.");
+
     exit(0);
 } catch (Exception $e) {
     $errorMessage = "Critical error in backup.php: " . $e->getMessage();
