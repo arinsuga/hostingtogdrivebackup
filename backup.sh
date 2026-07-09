@@ -78,7 +78,6 @@ else
         zipfile="$BACKUP_TEMP_DIR/${db}_$ts.zip"
         (cd "$BACKUP_TEMP_DIR" && zip -q "$zipfile" "$(basename "$outfile")")
         if [ -f "$zipfile" ]; then
-          echo "ERROR: Created zip backup: $zipfile"
           uploadFiles+=("$zipfile")
           rm "$outfile"
         else
@@ -98,7 +97,6 @@ if [ -n "$app_folders" ]; then
     if command -v zip >/dev/null 2>&1; then
       (cd "$DIR" && zip -q -r "$zipfile" ~/"${APP_ROOT}/${folder}")
       if [ -f "$zipfile" ]; then
-        echo "ERROR: Created app zip backup: $zipfile"
         uploadFiles+=("$zipfile")
       else
         echo "ERROR: Failed to create app zip backup: $zipfile"
