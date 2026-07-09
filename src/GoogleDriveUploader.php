@@ -8,6 +8,7 @@
 
 namespace BackupTool;
 
+use BackupTool\Logger;
 use Google_Service_Drive;
 use Google_Service_Drive_DriveFile;
 use Exception;
@@ -54,7 +55,9 @@ class GoogleDriveUploader
 
             return $fileId;
         } catch (Exception $e) {
-            $this->logger->error("Google Drive upload failed for '{$fileName}': " . $e->getMessage());
+            $errorMessage = "GoogleDriveUploader.php - Google Drive upload failed for '{$fileName}': " . $e->getMessage();
+            $this->logger->debugTerminal($errorMessage);
+            $this->logger->error($errorMessage);
             throw $e;
         }
     }
@@ -69,6 +72,12 @@ class GoogleDriveUploader
     public function getOrCreateFolder($folderName = '', $parentId = '')
     {
         try {
+            // If parentId is actually a path, resolve or create the folder path first.
+            if ($parentId && preg_match('#[\\/]+#', $parentId)) {
+                $this->logger->debugTerminal("GoogleDriveUploader.php - Resolving parent path '{$parentId}' to folder ID");
+                $parentId = $this->ensureFolderPath($parentId, 'root');
+            }
+
             // Check if folder exists
             $folderId = $this->findFolder($folderName, $parentId);
             
@@ -77,9 +86,11 @@ class GoogleDriveUploader
             }
 
             // Create folder
+            $this->logger->debugTerminal("GoogleDriveUploader.php - Creating folder '{$folderName}' in parent ID '{$parentId}'");
             $folder = new Google_Service_Drive_DriveFile();
             $folder->setName($folderName);
             $folder->setMimeType('application/vnd.google-apps.folder');
+            $this->logger->debugTerminal("GoogleDriveUploader.php - Folder creation request prepared for '{$folderName}'");
             
             if ($parentId) {
                 $folder->setParents(array($parentId));
@@ -91,8 +102,12 @@ class GoogleDriveUploader
 
             return $createdFolder->getId();
         } catch (Exception $e) {
-            $this->logger->error("Failed to create folder '{$folderName}': " . $e->getMessage());
+
+            $errorMessage = "GoogleDriveUploader.php - Failed to create folder '{$folderName}': " . $e->getMessage();
+            $this->logger->debugTerminal($errorMessage);
+            $this->logger->error($errorMessage);
             return null;
+            
         }
     }
 
@@ -127,7 +142,9 @@ class GoogleDriveUploader
 
             return null;
         } catch (Exception $e) {
-            $this->logger->error("Folder search failed: " . $e->getMessage());
+            $errorMessage = "GoogleDriveUploader.php - Folder search failed: " . $e->getMessage();
+            $this->logger->debugTerminal($errorMessage);
+            $this->logger->error($errorMessage);
             return null;
         }
     }
@@ -161,7 +178,10 @@ class GoogleDriveUploader
 
             return $createdFile->getId();
         } catch (Exception $e) {
-            throw new Exception("File upload failed: " . $e->getMessage());
+            $errorMessage = "GoogleDriveUploader.php - File upload failed: " . $e->getMessage();
+            $this->logger->debugTerminal($errorMessage);
+            $this->logger->error($errorMessage);
+            throw new Exception($errorMessage);
         }
     }
 
@@ -183,6 +203,34 @@ class GoogleDriveUploader
             if (!$currentId) {
                 return null;
             }
+        }
+
+        return $currentId;
+    }
+
+    private function ensureFolderPath($folderPath, $startFromId = 'root')
+    {
+        $segments = array_values(array_filter(preg_split('#[\\/]+#', $folderPath)));
+        $currentId = $startFromId;
+
+        foreach ($segments as $segment) {
+            $existing = $this->findFolder($segment, $currentId);
+            if ($existing) {
+                $currentId = $existing;
+                continue;
+            }
+
+            $this->logger->debugTerminal("GoogleDriveUploader.php - Creating intermediate folder '{$segment}' under parent ID '{$currentId}'");
+            $folder = new Google_Service_Drive_DriveFile();
+            $folder->setName($segment);
+            $folder->setMimeType('application/vnd.google-apps.folder');
+
+            if ($currentId) {
+                $folder->setParents(array($currentId));
+            }
+
+            $createdFolder = $this->service->files->create($folder, array('fields' => 'id'));
+            $currentId = $createdFolder->getId();
         }
 
         return $currentId;

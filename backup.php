@@ -3,7 +3,7 @@
  * backup.php - Main backup orchestration script
  *
  * PHP 7.2.23+ compatible
- * Usage: php backup.php <zip-file> [<zip-file> ...]
+ * Usage: php backup.php '<json-payload>'
  */
 
 require_once __DIR__ . '/vendor/autoload.php';
@@ -102,6 +102,57 @@ function resolvePath($value, $default, $baseDir = null)
     return $base . DIRECTORY_SEPARATOR . ltrim($value, '/\\');
 }
 
+function parseJsonPayload(array $argv)
+{
+    if (!isset($argv[1]) || trim($argv[1]) === '') {
+        throw new Exception('No JSON payload provided to backup.php.');
+    }
+
+    $payload = json_decode($argv[1]);
+    if ($payload === null || json_last_error() !== JSON_ERROR_NONE) {
+        throw new Exception('Invalid JSON payload passed to backup.php: ' . json_last_error_msg());
+    }
+
+    return $payload;
+}
+
+function applyPayloadEnv($payload)
+{
+    if (!isset($payload->env_file) || !is_object($payload->env_file)) {
+        return;
+    }
+
+    foreach ($payload->env_file as $key => $value) {
+        if ($value === null) {
+            $value = '';
+        }
+        if (!is_scalar($value)) {
+            continue;
+        }
+
+        $stringValue = (string)$value;
+        @putenv("{$key}={$stringValue}");
+        $_ENV[$key] = $stringValue;
+        $_SERVER[$key] = $stringValue;
+    }
+}
+
+function extractUploadFiles($payload)
+{
+    $uploadFiles = array();
+    if (!isset($payload->upload_files) || !is_array($payload->upload_files)) {
+        return $uploadFiles;
+    }
+
+    foreach ($payload->upload_files as $filePath) {
+        if (is_string($filePath) && trim($filePath) !== '') {
+            $uploadFiles[] = $filePath;
+        }
+    }
+
+    return $uploadFiles;
+}
+
 $logger = new Logger(
     resolvePath(getEnvValue('LOG_DIR', './logs'), __DIR__ . DIRECTORY_SEPARATOR . 'logs', __DIR__),
     getEnvValue('LOG_FILE', 'backup.log')
@@ -113,20 +164,34 @@ $emailNotifier = new EmailNotifier($adminEmail, $logger);
 
 try {
 
-    $googleDriveFolderId = getEnvValue('GOOGLE_DRIVE_FOLDER_ID');
-    $backupTempDir = resolvePath(getEnvValue('BACKUP_TEMP_DIR', 'temp'), __DIR__ . DIRECTORY_SEPARATOR . 'temp', __DIR__);
-    $appRoot = resolvePath(getEnvValue('APP_ROOT', __DIR__ . '/public_html'), __DIR__ . DIRECTORY_SEPARATOR . 'public_html', __DIR__);
-    $compressionLevel = intval(getEnvValue('COMPRESSION_LEVEL', 6));
-    $retentionDays = intval(getEnvValue('RETENTION_DAYS', 30));
+    // Parse JSON payload from command line arguments
+    $payload = parseJsonPayload($argv);
+
+    // Use payload values directly to set configuration variables (object-style)
+    $payloadEnv = isset($payload->env_file) && is_object($payload->env_file) ? $payload->env_file : (object)array();
+
+    $googleDriveFolderId = (isset($payloadEnv->GOOGLE_DRIVE_FOLDER_ID) && $payloadEnv->GOOGLE_DRIVE_FOLDER_ID !== '')
+        ? $payloadEnv->GOOGLE_DRIVE_FOLDER_ID
+        : null;
+
+    $backupTempDirVal = (isset($payloadEnv->BACKUP_TEMP_DIR) && $payloadEnv->BACKUP_TEMP_DIR !== '')
+        ? $payloadEnv->BACKUP_TEMP_DIR
+        : null;
+    $backupTempDir = resolvePath($backupTempDirVal, __DIR__ . DIRECTORY_SEPARATOR . 'temp', __DIR__);
+
+    $appRootVal = (isset($payloadEnv->APP_ROOT) && $payloadEnv->APP_ROOT !== '')
+        ? $payloadEnv->APP_ROOT
+        : null;
+    $appRoot = resolvePath($appRootVal, __DIR__ . DIRECTORY_SEPARATOR . 'public_html', __DIR__);
+
+    $compressionLevel = intval(isset($payloadEnv->COMPRESSION_LEVEL) ? $payloadEnv->COMPRESSION_LEVEL : getEnvValue('COMPRESSION_LEVEL', 6));
+    $retentionDays = intval(isset($payloadEnv->RETENTION_DAYS) ? $payloadEnv->RETENTION_DAYS : getEnvValue('RETENTION_DAYS', 30));
 
     $logger->debugTerminal("backup.php - GOOGLE_DRIVE_FOLDER_ID={$googleDriveFolderId}");
     $logger->debugTerminal("backup.php - BACKUP_TEMP_DIR={$backupTempDir}");
     $logger->debugTerminal("backup.php - APP_ROOT={$appRoot}");
     $logger->debugTerminal("backup.php - COMPRESSION_LEVEL={$compressionLevel}");
     $logger->debugTerminal("backup.php - RETENTION_DAYS={$retentionDays}");
-
-    
-
 
     if (!$googleDriveFolderId) {
         $errorMessage = "Missing required environment variable: GOOGLE_DRIVE_FOLDER_ID";
@@ -145,26 +210,24 @@ try {
     $uploader = new GoogleDriveUploader($driveService, $googleDriveFolderId, $logger);
     $logger->debugTerminal("backup.php - Google Drive uploader initialized successfully.");
 
-    // Database and application dumps are produced by external script (backup.sh).
-    // This script will upload the ZIP files that `backup.sh` created in the temp directory.
-    $logger->debugTerminal("backup.php - Ready to upload ZIPs from: {$backupTempDir}");
-
     $retention = new RetentionPolicy($driveService, $googleDriveFolderId, $retentionDays, $logger);
     $logger->debugTerminal("backup.php - Retention policy initialized successfully.");
 
-    $uploadedFiles = array_slice($argv, 1);
-    if (empty($uploadedFiles)) {
-        $logger->errorTerminal("No backup ZIP files were provided to backup.php.");
-        throw new Exception('No backup ZIP files were provided to backup.php.');
+    $uploadFiles = extractUploadFiles($payload);
+    if (empty($uploadFiles)) {
+        $logger->errorTerminal("No upload_files were provided in the JSON payload.");
+        throw new Exception('No upload_files were provided in the JSON payload.');
     }
 
-    $logger->debugTerminal('backup.php - Files passed for upload: ' . implode(', ', $uploadedFiles));
+    $logger->debugTerminal('backup.php - Files passed for upload: ' . implode(', ', $uploadFiles));
+    $logger->debugTerminal("");
 
-    foreach ($uploadedFiles as $filePath) {
-        if (!is_string($filePath) || trim($filePath) === '') {
-            continue;
-        }
+    // $logger->debugTerminal("===== exit for testing only =====");
+    // throw new Exception("backup.php - Starting backup orchestration...");
 
+
+    $logger->debugTerminal("backup.php - Starting backup orchestration...");
+    foreach ($uploadFiles as $filePath) {
         if (!file_exists($filePath)) {
             $logger->error("Provided backup file does not exist: {$filePath}");
             continue;
@@ -174,14 +237,15 @@ try {
         $uploader->uploadBackup($filePath, basename($filePath));
         @unlink($filePath);
     }
-
-    $logger->debugTerminal("backup.php - All provided backup ZIP files processed successfully.");
+    $logger->debugTerminal("backup.php - All provided backup ZIP files processed successfully uploaded.");
 
     // Retention policy cleanup
     $retention->deleteOldBackups();
+     $logger->debugTerminal("backup.php - Retention policy cleanup completed successfully.");
 
     exit(0);
 } catch (Exception $e) {
+     $logger->debugTerminal("backup.php - Exception caught: " . $e->getMessage());
     $logger->error($e->getMessage());
     if ($emailNotifier->isEnabled()) {
         $emailNotifier->sendCriticalError('BackupFailure', $e->getMessage());

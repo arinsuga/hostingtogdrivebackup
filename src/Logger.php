@@ -24,13 +24,22 @@ class Logger
         }
     }
 
-    /**
-     * Log an error message
-     * Format: [YYYY-MM-DD HH:MM:SS] ERROR: {message}
-     * 
-     * @param string $message Error message to log
-     * @return bool True if successful, false otherwise
-     */
+    public function success($message = '')
+    {
+        $timestamp = date('Y-m-d H:i:s');
+        $logEntry = "[{$timestamp}] SUCCESS: {$message}\n";
+
+        return $this->write($logEntry);
+    }
+
+    public function successTerminal($message = '')
+    {
+        $timestamp = date('Y-m-d H:i:s');
+        $logEntry = "[{$timestamp}] SUCCESS: {$message}\n";
+
+        echo $logEntry;
+    }
+
     public function error($message = '')
     {
         $timestamp = date('Y-m-d H:i:s');
@@ -47,13 +56,6 @@ class Logger
         echo $logEntry;
     }
 
-    /**
-     * Log an error message
-     * Format: [YYYY-MM-DD HH:MM:SS] ERROR: {message}
-     * 
-     * @param string $message Error message to log
-     * @return bool True if successful, false otherwise
-     */
     public function debug($message = '')
     {
         $timestamp = date('Y-m-d H:i:s');

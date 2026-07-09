@@ -52,28 +52,6 @@ echo "Application root directory: $APP_ROOT"
 echo "===== end Initial Backup Variables ====="
 echo ""
 
-# Build JSON string from exported environment variables using PHP (avoids dependency on jq)
-envFile=$(php -r '
-echo json_encode([
-  "DB_HOST" => getenv("DB_HOST") !== false ? getenv("DB_HOST") : null,
-  "DB_USER" => getenv("DB_USER") !== false ? getenv("DB_USER") : null,
-  "DB_PASSWORD" => getenv("DB_PASSWORD") !== false ? getenv("DB_PASSWORD") : null,
-  "GOOGLE_DRIVE_FOLDER_ID" => getenv("GOOGLE_DRIVE_FOLDER_ID") !== false ? getenv("GOOGLE_DRIVE_FOLDER_ID") : null,
-  "BACKUP_TEMP_DIR" => getenv("BACKUP_TEMP_DIR") !== false ? getenv("BACKUP_TEMP_DIR") : null,
-  "APP_ROOT" => getenv("APP_ROOT") !== false ? getenv("APP_ROOT") : null,
-  "ADMIN_EMAIL" => getenv("ADMIN_EMAIL") !== false ? getenv("ADMIN_EMAIL") : null,
-  "LOG_DIR" => getenv("LOG_DIR") !== false ? getenv("LOG_DIR") : null,
-  "LOG_FILE" => getenv("LOG_FILE") !== false ? getenv("LOG_FILE") : null,
-  "RETENTION_DAYS" => getenv("RETENTION_DAYS") !== false ? getenv("RETENTION_DAYS") : null,
-  "COMPRESSION_LEVEL" => getenv("COMPRESSION_LEVEL") !== false ? getenv("COMPRESSION_LEVEL") : null,
-], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-')
-
-echo "===== start Environment Variables JSON ====="
-echo "$envFile"
-echo "===== end Environment Variables JSON ====="
-
-
 case "$BACKUP_TEMP_DIR" in
   /*) ;;
   *) BACKUP_TEMP_DIR="$DIR/$BACKUP_TEMP_DIR" ;;
@@ -135,7 +113,7 @@ if [ -n "$app_folders" ]; then
     zipfile="$BACKUP_TEMP_DIR/${folder}_$ts.zip"
     echo "Creating app backup zip for: $folder -> $zipfile"
     if command -v zip >/dev/null 2>&1; then
-      (cd "$DIR" && zip -q -r "$zipfile" "$APP_ROOT/${folder}")
+      (cd "$DIR" && zip -q -r "$zipfile" ~/"${APP_ROOT}/${folder}")
       if [ -f "$zipfile" ]; then
         echo "Created app zip backup: $zipfile"
         uploadFiles+=("$zipfile")
@@ -148,5 +126,36 @@ if [ -n "$app_folders" ]; then
   done
 fi
 
-# Now run PHP backup orchestration and pass the generated ZIP files for upload
-#php "$DIR/backup.php" "${uploadFiles[@]}"
+# Build JSON including upload_files from the generated zip paths
+envFile=$(printf '%s\n' "${uploadFiles[@]}" | php -r '
+$uploadFiles = [];
+while (($line = fgets(STDIN)) !== false) {
+    $line = trim($line);
+    if ($line !== "") {
+        $uploadFiles[] = $line;
+    }
+}
+echo json_encode([
+  "env_file" => [
+    "DB_HOST" => getenv("DB_HOST") !== false ? getenv("DB_HOST") : null,
+    "DB_USER" => getenv("DB_USER") !== false ? getenv("DB_USER") : null,
+    "DB_PASSWORD" => getenv("DB_PASSWORD") !== false ? getenv("DB_PASSWORD") : null,
+    "GOOGLE_DRIVE_FOLDER_ID" => getenv("GOOGLE_DRIVE_FOLDER_ID") !== false ? getenv("GOOGLE_DRIVE_FOLDER_ID") : null,
+    "BACKUP_TEMP_DIR" => getenv("BACKUP_TEMP_DIR") !== false ? getenv("BACKUP_TEMP_DIR") : null,
+    "APP_ROOT" => getenv("APP_ROOT") !== false ? getenv("APP_ROOT") : null,
+    "ADMIN_EMAIL" => getenv("ADMIN_EMAIL") !== false ? getenv("ADMIN_EMAIL") : null,
+    "LOG_DIR" => getenv("LOG_DIR") !== false ? getenv("LOG_DIR") : null,
+    "LOG_FILE" => getenv("LOG_FILE") !== false ? getenv("LOG_FILE") : null,
+    "RETENTION_DAYS" => getenv("RETENTION_DAYS") !== false ? getenv("RETENTION_DAYS") : null,
+    "COMPRESSION_LEVEL" => getenv("COMPRESSION_LEVEL") !== false ? getenv("COMPRESSION_LEVEL") : null,
+  ],
+  "upload_files" => $uploadFiles,
+], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+')
+
+echo "===== start Environment Variables JSON ====="
+echo "$envFile"
+echo "===== end Environment Variables JSON ====="
+
+# Now run PHP backup orchestration and pass the generated JSON payload as one argument
+php "$DIR/backup.php" "$envFile"
