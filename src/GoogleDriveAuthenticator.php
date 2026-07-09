@@ -25,15 +25,12 @@ class GoogleDriveAuthenticator
         $this->tokenFile = $tokenFile;
         $this->logger = $logger ?? new Logger();
 
-        $this->logger->error("Initializing GoogleDriveAuthenticator with credentials: {$this->credentialsFile} and token: {$this->tokenFile}");
-
         if (!file_exists($this->credentialsFile)) {
             $errorMessage = "Credentials file not found: {$this->credentialsFile}";
             $this->logger->error("ERROR: {$errorMessage}");
             throw new Exception($errorMessage);
         }
 
-        $this->logger->error("Loading Google Client with credentials from: {$this->credentialsFile}");
         $this->client = new Google_Client();
         $this->client->setAuthConfig($this->credentialsFile);
         $this->client->setScopes(array('https://www.googleapis.com/auth/drive'));
@@ -50,42 +47,59 @@ class GoogleDriveAuthenticator
      */
     public function authenticate()
     {
-        $this->logger->error("Authenticating Google Drive client using token file: {$this->tokenFile}");
         if (!file_exists($this->tokenFile)) {
+
             $errorMessage = "Token file not found: {$this->tokenFile}. Please run auth-setup.php first.";
             $this->logger->error("ERROR: {$errorMessage}");
+            $this->logger->errorTerminal("ERROR: {$errorMessage}");
             throw new Exception($errorMessage);
+
         }
 
         try {
             $tokenData = json_decode(file_get_contents($this->tokenFile), true);
             
             if (!$tokenData) {
-                $this->logger->error("ERROR: Invalid token.json format");
-                throw new Exception("Invalid token.json format");
+
+                $errorMessage = "Invalid token.json format. Please ensure the file is valid JSON.";
+                $this->logger->error("{$errorMessage}");
+                $this->logger->errorTerminal("{$errorMessage}");
+                throw new Exception($errorMessage);
+
             }
 
-            $this->logger->error("Setting access token for Google Client");
             // Set the access token
             $this->client->setAccessToken($tokenData);
 
 
-            $this->logger->error("Checking if access token is expired or needs refresh");
             // Proactive refresh: always refresh before each backup
             if ($this->client->isAccessTokenExpired()) {
-                $this->logger->error("Access token expired, refreshing...");
+                $errorMessage = "Access token expired, refreshing...";
+                $this->logger->error("{$errorMessage}");
+                $this->logger->errorTerminal("{$errorMessage}");
                 $this->refreshToken();
+
             } else {
-                $this->logger->error("Access token is valid, but refreshing proactively to ensure freshness...");
+
+                $errorMessage = "Access token is valid, but refreshing proactively to ensure freshness...";
+                $this->logger->error("{$errorMessage}");
+                $this->logger->errorTerminal("{$errorMessage}");
+
                 // Even if not expired, refresh proactively to ensure freshness
                 $this->refreshToken();
             }
 
-            $this->logger->error("Google Drive authentication successful, access token is valid and refreshed.");
+            $this->logger->success("Google Drive authentication successful, access token is valid and refreshed.");
+            $this->logger->successTerminal("Google Drive authentication successful, access token is valid and refreshed.");
+
             return true;
         } catch (Exception $e) {
-            $this->logger->error("Authentication failed: " . $e->getMessage());
+
+            $errorMessage = "Authentication failed: " . $e->getMessage();
+            $this->logger->errorTerminal("{$errorMessage}");
+            $this->logger->error("{$errorMessage}");
             throw new Exception("Authentication error: " . $e->getMessage());
+
         }
     }
 
@@ -100,7 +114,11 @@ class GoogleDriveAuthenticator
     {
         try {
             if (!$this->client->getRefreshToken()) {
-                throw new Exception("No refresh token available");
+                $errorMessage = "No refresh token available. Please re-run auth-setup.php to obtain a new refresh token.";
+                $this->logger->error("{$errorMessage}");
+                $this->logger->errorTerminal("{$errorMessage}");
+                throw new Exception($errorMessage);
+
             }
 
             // Refresh the access token
@@ -110,13 +128,22 @@ class GoogleDriveAuthenticator
             
             // Save updated token
             if (!file_put_contents($this->tokenFile, json_encode($tokenData, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES))) {
-                throw new Exception("Failed to save token file");
+
+                $errorMessage = "Failed to save refreshed token to file: {$this->tokenFile}";
+                $this->logger->error("{$errorMessage}");
+                $this->logger->errorTerminal("{$errorMessage}");
+                throw new Exception($errorMessage);
+
             }
 
             return true;
         } catch (Exception $e) {
-            $this->logger->error("Token refresh failed: " . $e->getMessage());
-            throw new Exception("Token refresh error: " . $e->getMessage());
+
+            $errorMessage = "Token refresh failed: " . $e->getMessage();
+            $this->logger->errorTerminal("{$errorMessage}");
+            $this->logger->error("{$errorMessage}");
+            throw new Exception($errorMessage);
+            
         }
     }
 
